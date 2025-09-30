@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bergamoter'sChat</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        font-family: monospace;
+        background: black;
+        color: white;
+      }
+
+      header {
+        text-align: center;
+        padding: 15px;
+        font-size: 24px;
+        font-weight: bold;
+        border-bottom: 1px solid #444;
+      }
+
+      #chat {
+        flex: 1;
+        padding: 10px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-size: 14px;
+      }
+
+      #inputBox {
+        display: flex;
+        border-top: 1px solid #444;
+      }
+
+      #input {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        outline: none;
+        font-size: 14px;
+        background: #111;
+        color: white;
+      }
+
+      #sendBtn {
+        padding: 10px 20px;
+        background: #333;
+        border: none;
+        color: white;
+        cursor: pointer;
+      }
+
+      #sendBtn:hover {
+        background: #555;
+      }
+
+      .message {
+        margin: 5px 0;
+      }
+
+      .username {
+        font-weight: bold;
+        color: #0f0;
+      }
+
+      .chat-img {
+        width: 250px;
+        height: 250px;
+        object-fit: cover;
+        display: block;
+        margin-top: 5px;
+      }
+
+      .chat-audio,
+      .chat-video {
+        display: block;
+        margin-top: 5px;
+        max-width: 100%;
+      }
+
+      iframe {
+        margin-top: 5px;
+        width: 300px;
+        height: 169px; /* proporção 16:9 */
+        border: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>Bergamoter'sChat</header>
+
+    <div id="chat"></div>
+
+    <div id="inputBox">
+      <input type="text" id="input" placeholder="Digite sua mensagem..." />
+      <button id="sendBtn">Enviar</button>
+    </div>
+
+    <script>
+      const chat = document.getElementById("chat");
+      const input = document.getElementById("input");
+      const sendBtn = document.getElementById("sendBtn");
+
+      let username = localStorage.getItem("username");
+      if (!username) {
+        username = prompt("Escolha um nome de usuário:");
+        if (!username || username.trim() === "") {
+          username = "Anônimo";
+        }
+        localStorage.setItem("username", username);
+      }
+
+      function addMessage(user, text) {
+        const msg = document.createElement("div");
+        msg.classList.add("message");
+
+        const userSpan = document.createElement("span");
+        userSpan.classList.add("username");
+        userSpan.innerText = user + ": ";
+
+        msg.appendChild(userSpan);
+
+        if (text.startsWith("http")) {
+          // Imagem
+          if (text.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+            const img = document.createElement("img");
+            img.src = text;
+            img.classList.add("chat-img");
+            img.onerror = () => {
+              msg.appendChild(document.createTextNode(text));
+            };
+            msg.appendChild(img);
+          }
+          // Áudio
+          else if (text.match(/\.(mp3|ogg|wav)$/i)) {
+            const audio = document.createElement("audio");
+            audio.controls = true;
+            audio.classList.add("chat-audio");
+
+            const source = document.createElement("source");
+            source.src = text;
+            audio.appendChild(source);
+
+            msg.appendChild(audio);
+          }
+          // Vídeo local
+          else if (text.match(/\.(mp4|webm)$/i)) {
+            const video = document.createElement("video");
+            video.controls = true;
+            video.classList.add("chat-video");
+
+            const source = document.createElement("source");
+            source.src = text;
+            video.appendChild(source);
+
+            msg.appendChild(video);
+          }
+          // YouTube
+          else if (text.includes("youtube.com") || text.includes("youtu.be")) {
+            let videoId = null;
+            if (text.includes("youtube.com")) {
+              const params = new URL(text).searchParams;
+              videoId = params.get("v");
+            }
+            if (!videoId && text.includes("youtu.be")) {
+              videoId = text.split("/").pop();
+            }
+            if (videoId) {
+              const iframe = document.createElement("iframe");
+              iframe.src = `https://www.youtube.com/embed/${videoId}`;
+              iframe.allow =
+                "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+              iframe.allowFullscreen = true;
+              msg.appendChild(iframe);
+            } else {
+              msg.appendChild(document.createTextNode(text));
+            }
+          }
+          // Spotify
+          else if (text.includes("spotify.com")) {
+            const iframe = document.createElement("iframe");
+            iframe.src = `https://open.spotify.com/embed/track/${
+              text.split("/").pop().split("?")[0]
+            }`;
+            iframe.allow = "encrypted-media";
+            msg.appendChild(iframe);
+          }
+          // Link normal
+          else {
+            msg.appendChild(document.createTextNode(text));
+          }
+        } else {
+          msg.appendChild(document.createTextNode(text));
+        }
+
+        chat.appendChild(msg);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      sendBtn.addEventListener("click", () => {
+        if (input.value.trim() !== "") {
+          addMessage(username, input.value.trim());
+          input.value = "";
+        }
+      });
+
+      input.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          sendBtn.click();
+        }
+      });
+    </script>
+  </body>
+</html>
