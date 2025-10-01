@@ -2,8 +2,9 @@
 <html lang="pt">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" href="assets/laranja.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bergamoter'sChat</title>
+    <title>Bergas</title>
     <style>
       body {
         margin: 0;
@@ -62,11 +63,55 @@
 
       .message {
         margin: 5px 0;
+        position: relative;
+      }
+
+      .message-content {
+        display: inline-block;
+        width: calc(100% - 100px);
+      }
+
+      .reaction-buttons {
+        display: inline-block;
+        margin-left: 10px;
+        vertical-align: top;
+      }
+
+      .reaction-btn {
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 14px;
+        margin: 0 3px;
+        padding: 2px 4px;
+        border-radius: 3px;
+        opacity: 0.4;
+        transition: opacity 0.2s ease;
+      }
+
+      .reaction-btn:hover {
+        background: #333;
+        opacity: 0.8;
+      }
+
+      .reaction-btn.has-reactions {
+        opacity: 1;
+      }
+
+      .reaction-count {
+        font-size: 10px;
+        margin-left: 2px;
+        color: #aaa;
       }
 
       .username {
         font-weight: bold;
         color: #0f0;
+      }
+
+      .username.other {
+        color: #87ceeb;
       }
 
       .chat-img {
@@ -87,13 +132,38 @@
       iframe {
         margin-top: 5px;
         width: 300px;
-        height: 169px; /* proporção 16:9 */
+        height: 169px;
         border: none;
+      }
+
+      .timeout-message {
+        background: #443300;
+        border-left: 4px solid #ff6600;
+        padding: 8px;
+        margin: 5px 0;
+        border-radius: 4px;
+      }
+
+      .timeout-result {
+        background: #440000;
+        border-left: 4px solid #ff0000;
+        padding: 8px;
+        margin: 5px 0;
+        border-radius: 4px;
+        font-weight: bold;
       }
     </style>
   </head>
   <body>
-    <header>Bergamoter'sChat</header>
+    <header>
+      &#127818;Bergachat
+      <span
+        id="userCount"
+        style="font-size: 14px; color: #87ceeb; margin-left: 20px"
+      >
+        👥 0 panguão
+      </span>
+    </header>
 
     <div id="chat"></div>
 
@@ -107,6 +177,9 @@
       const input = document.getElementById("input");
       const sendBtn = document.getElementById("sendBtn");
 
+      // Conectar ao WebSocket
+      const ws = new WebSocket("ws://localhost:8080/ws");
+
       let username = localStorage.getItem("username");
       if (!username) {
         username = prompt("Escolha um nome de usuário:");
@@ -116,50 +189,153 @@
         localStorage.setItem("username", username);
       }
 
-      function addMessage(user, text) {
+      // Gerenciar conexão
+      ws.onopen = function () {
+        console.log("Conectado ao servidor");
+        // Enviar mensagem inicial para registrar o usuário
+        const initialMsg = {
+          name: username,
+          message: "",
+          type: "user_register",
+        };
+        ws.send(JSON.stringify(initialMsg));
+      };
+
+      ws.onclose = function () {
+        console.log("Desconectado do servidor");
+      };
+
+      ws.onerror = function (error) {
+        console.log("Erro no WebSocket:", error);
+      };
+
+      // Receber mensagens do servidor
+      ws.onmessage = function (event) {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "user_count") {
+          const userCountElement = document.getElementById("userCount");
+          userCountElement.textContent = `👥 ${data.count} usuários online`;
+        } else if (data.type === "reaction") {
+          updateReactions(data.reactTo, data.reactions);
+        } else if (data.type === "timeout_vote") {
+          addTimeoutVote(
+            data.name,
+            data.message,
+            data.id,
+            data.targetUser,
+            data.timeoutMinutes,
+            data.voteEndTime
+          );
+        } else if (data.type === "timeout_result") {
+          addTimeoutResult(data.message);
+        } else if (data.type === "message") {
+          addMessage(data.name, data.message, data.id);
+        }
+      };
+
+      function updateReactions(messageId, reactions) {
+        const messageElement = document.querySelector(
+          `[data-message-id="${messageId}"]`
+        );
+        if (messageElement) {
+          const likeBtn = messageElement.querySelector(".like-btn");
+          const dislikeBtn = messageElement.querySelector(".dislike-btn");
+
+          const likeCount = reactions.like || 0;
+          const dislikeCount = reactions.dislike || 0;
+
+          // Atualizar botão de like
+          if (likeCount > 0) {
+            likeBtn.innerHTML = `👍 <span class="reaction-count">${likeCount}</span>`;
+            likeBtn.classList.add("has-reactions");
+          } else {
+            likeBtn.innerHTML = "👍";
+            likeBtn.classList.remove("has-reactions");
+          }
+
+          // Atualizar botão de dislike
+          if (dislikeCount > 0) {
+            dislikeBtn.innerHTML = `🍅 <span class="reaction-count">${dislikeCount}</span>`;
+            dislikeBtn.classList.add("has-reactions");
+          } else {
+            dislikeBtn.innerHTML = "🍅";
+            dislikeBtn.classList.remove("has-reactions");
+          }
+        }
+      }
+
+      function sendReaction(messageId, reactionType) {
+        if (ws.readyState === WebSocket.OPEN) {
+          const reaction = {
+            type: "reaction",
+            reactTo: messageId,
+            reaction: reactionType,
+          };
+          ws.send(JSON.stringify(reaction));
+        }
+      }
+
+      function addMessage(user, text, messageId) {
         const msg = document.createElement("div");
         msg.classList.add("message");
+        msg.setAttribute("data-message-id", messageId);
+
+        const contentDiv = document.createElement("div");
+        contentDiv.classList.add("message-content");
 
         const userSpan = document.createElement("span");
         userSpan.classList.add("username");
+
+        if (user !== username) {
+          userSpan.classList.add("other");
+        }
+
         userSpan.innerText = user + ": ";
+        contentDiv.appendChild(userSpan);
 
-        msg.appendChild(userSpan);
-
-        if (text.startsWith("http")) {
+        // Verificar comando /img
+        if (text.startsWith("/img")) {
+          const imageUrl = text.substring(4).trim();
+          const img = document.createElement("img");
+          img.src = imageUrl;
+          img.classList.add("chat-img");
+          img.onerror = () => {
+            contentDiv.appendChild(
+              document.createTextNode("Erro ao carregar imagem: " + imageUrl)
+            );
+          };
+          contentDiv.appendChild(img);
+        } else if (text.startsWith("http")) {
           // Imagem
           if (text.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
             const img = document.createElement("img");
             img.src = text;
             img.classList.add("chat-img");
             img.onerror = () => {
-              msg.appendChild(document.createTextNode(text));
+              contentDiv.appendChild(document.createTextNode(text));
             };
-            msg.appendChild(img);
+            contentDiv.appendChild(img);
           }
           // Áudio
           else if (text.match(/\.(mp3|ogg|wav)$/i)) {
             const audio = document.createElement("audio");
             audio.controls = true;
             audio.classList.add("chat-audio");
-
             const source = document.createElement("source");
             source.src = text;
             audio.appendChild(source);
-
-            msg.appendChild(audio);
+            contentDiv.appendChild(audio);
           }
           // Vídeo local
           else if (text.match(/\.(mp4|webm)$/i)) {
             const video = document.createElement("video");
             video.controls = true;
             video.classList.add("chat-video");
-
             const source = document.createElement("source");
             source.src = text;
             video.appendChild(source);
-
-            msg.appendChild(video);
+            contentDiv.appendChild(video);
           }
           // YouTube
           else if (text.includes("youtube.com") || text.includes("youtu.be")) {
@@ -169,7 +345,8 @@
               videoId = params.get("v");
             }
             if (!videoId && text.includes("youtu.be")) {
-              videoId = text.split("/").pop();
+              const parts = text.split("/");
+              videoId = parts[parts.length - 1].split("?")[0];
             }
             if (videoId) {
               const iframe = document.createElement("iframe");
@@ -177,9 +354,9 @@
               iframe.allow =
                 "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
               iframe.allowFullscreen = true;
-              msg.appendChild(iframe);
+              contentDiv.appendChild(iframe);
             } else {
-              msg.appendChild(document.createTextNode(text));
+              contentDiv.appendChild(document.createTextNode(text));
             }
           }
           // Spotify
@@ -189,23 +366,131 @@
               text.split("/").pop().split("?")[0]
             }`;
             iframe.allow = "encrypted-media";
-            msg.appendChild(iframe);
-          }
-          // Link normal
-          else {
-            msg.appendChild(document.createTextNode(text));
+            contentDiv.appendChild(iframe);
+          } else {
+            contentDiv.appendChild(document.createTextNode(text));
           }
         } else {
-          msg.appendChild(document.createTextNode(text));
+          contentDiv.appendChild(document.createTextNode(text));
+        }
+
+        msg.appendChild(contentDiv);
+
+        // Botões de reação - só mostrar se não for a própria mensagem
+        if (user !== username) {
+          const reactionDiv = document.createElement("div");
+          reactionDiv.classList.add("reaction-buttons");
+
+          const likeBtn = document.createElement("button");
+          likeBtn.classList.add("reaction-btn", "like-btn");
+          likeBtn.innerHTML = "👍";
+          likeBtn.onclick = () => sendReaction(messageId, "like");
+
+          const dislikeBtn = document.createElement("button");
+          dislikeBtn.classList.add("reaction-btn", "dislike-btn");
+          dislikeBtn.innerHTML = "🍅";
+          dislikeBtn.onclick = () => sendReaction(messageId, "dislike");
+
+          reactionDiv.appendChild(likeBtn);
+          reactionDiv.appendChild(dislikeBtn);
+          msg.appendChild(reactionDiv);
         }
 
         chat.appendChild(msg);
         chat.scrollTop = chat.scrollHeight;
       }
 
+      function addTimeoutVote(
+        user,
+        text,
+        messageId,
+        targetUser,
+        minutes,
+        endTime
+      ) {
+        const msg = document.createElement("div");
+        msg.classList.add("message", "timeout-message");
+        msg.setAttribute("data-message-id", messageId);
+
+        const contentDiv = document.createElement("div");
+        contentDiv.classList.add("message-content");
+
+        const userSpan = document.createElement("span");
+        userSpan.classList.add("username");
+        if (user !== username) {
+          userSpan.classList.add("other");
+        }
+        userSpan.innerText = user + ": ";
+        contentDiv.appendChild(userSpan);
+        contentDiv.appendChild(document.createTextNode(text));
+
+        // Timer da votação
+        const timerDiv = document.createElement("div");
+        timerDiv.style.fontSize = "12px";
+        timerDiv.style.color = "#888";
+        timerDiv.style.marginTop = "5px";
+        contentDiv.appendChild(timerDiv);
+
+        // Atualizar timer a cada segundo
+        const updateTimer = () => {
+          const now = Math.floor(Date.now() / 1000);
+          const remaining = endTime - now;
+          if (remaining > 0) {
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+            timerDiv.textContent = `⏱️ Tempo restante: ${minutes}:${seconds
+              .toString()
+              .padStart(2, "0")}`;
+            setTimeout(updateTimer, 1000);
+          } else {
+            timerDiv.textContent = "⏱️ Votação encerrada";
+          }
+        };
+        updateTimer();
+
+        msg.appendChild(contentDiv);
+
+        // Botões de reação para todos (exceto própria mensagem e pessoa alvo)
+        if (user !== username && targetUser !== username) {
+          const reactionDiv = document.createElement("div");
+          reactionDiv.classList.add("reaction-buttons");
+
+          const likeBtn = document.createElement("button");
+          likeBtn.classList.add("reaction-btn", "like-btn");
+          likeBtn.innerHTML = "👍";
+          likeBtn.onclick = () => sendReaction(messageId, "like");
+
+          const dislikeBtn = document.createElement("button");
+          dislikeBtn.classList.add("reaction-btn", "dislike-btn");
+          dislikeBtn.innerHTML = "🍅";
+          dislikeBtn.onclick = () => sendReaction(messageId, "dislike");
+
+          reactionDiv.appendChild(likeBtn);
+          reactionDiv.appendChild(dislikeBtn);
+          msg.appendChild(reactionDiv);
+        }
+
+        chat.appendChild(msg);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      function addTimeoutResult(text) {
+        const msg = document.createElement("div");
+        msg.classList.add("message", "timeout-result");
+
+        msg.textContent = text;
+
+        chat.appendChild(msg);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
       sendBtn.addEventListener("click", () => {
-        if (input.value.trim() !== "") {
-          addMessage(username, input.value.trim());
+        if (input.value.trim() !== "" && ws.readyState === WebSocket.OPEN) {
+          const message = {
+            name: username,
+            message: input.value.trim(),
+          };
+          ws.send(JSON.stringify(message));
           input.value = "";
         }
       });
