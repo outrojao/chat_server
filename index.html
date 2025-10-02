@@ -178,7 +178,12 @@
       const sendBtn = document.getElementById("sendBtn");
 
       // Conectar ao WebSocket
-      const ws = new WebSocket("ws://localhost:8080/ws");
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const wsUrl = `${proto}://${location.host}/ws`;
+      const ws = new WebSocket(wsUrl);
+
+      // opcional: log
+      console.log("Conectando WebSocket em", wsUrl);
 
       let username = localStorage.getItem("username");
       if (!username) {
